@@ -467,23 +467,40 @@ class JkpPreprocessor:
         else:
             self.data['factor_id'] = self.data['name']
         
-        # Pivot the data
+        # Pivot the returns data
         self.factor_data = self.data.pivot(
             index=self.date_column,
             columns='factor_id',
             values=self.return_column
         )
         
+        # If n_stocks column exists, pivot it as well
+        if 'n_stocks' in self.data.columns:
+            n_stocks_pivot = self.data.pivot(
+                index=self.date_column,
+                columns='factor_id',
+                values='n_stocks'
+            )
+            
+            # Rename columns to indicate they represent n_stocks
+            n_stocks_pivot.columns = [f"{col}_n_stocks" for col in n_stocks_pivot.columns]
+            
+            # Join with the factor data
+            self.factor_data = pd.concat([self.factor_data, n_stocks_pivot], axis=1)
+            
+            print(f"Added {len(n_stocks_pivot.columns)} n_stocks columns to processed data")
+        
         print(f"Pivoted data shape: {self.factor_data.shape}")
-        print(f"Created {self.factor_data.shape[1]} factor columns")
+        print(f"Created {self.factor_data.shape[1]} columns")
         
         return self
+
     
     
-    
+   
     def handle_outliers(self, method='winsorize', threshold=3.0):
         """
-        Handle outliers in factor returns.
+        Handle outliers in factor returns (excluding n_stocks columns).
         
         Parameters:
         -----------
@@ -503,12 +520,18 @@ class JkpPreprocessor:
         
         print(f"Handling outliers using {method} method...")
         
+        # Filter out n_stocks columns
+        factor_cols = [col for col in self.factor_data.columns if not col.endswith('_n_stocks')]
+        n_stocks_cols = [col for col in self.factor_data.columns if col.endswith('_n_stocks')]
+        
+        print(f"Processing {len(factor_cols)} factor columns (excluding {len(n_stocks_cols)} n_stocks columns)")
+        
         if method == 'winsorize':
             # Winsorize each factor column (cap at specified quantiles)
             lower_quantile = 0.01
             upper_quantile = 0.99
             
-            for col in self.factor_data.columns:
+            for col in factor_cols:
                 lower_bound = self.factor_data[col].quantile(lower_quantile)
                 upper_bound = self.factor_data[col].quantile(upper_quantile)
                 self.factor_data[col] = self.factor_data[col].clip(lower_bound, upper_bound)
@@ -517,7 +540,7 @@ class JkpPreprocessor:
             
         elif method == 'clip':
             # Clip values based on standard deviation
-            for col in self.factor_data.columns:
+            for col in factor_cols:
                 mean = self.factor_data[col].mean()
                 std = self.factor_data[col].std()
                 lower_bound = mean - threshold * std
@@ -528,19 +551,22 @@ class JkpPreprocessor:
             
         elif method == 'zscore':
             # Remove observations with extreme z-scores
-            for col in self.factor_data.columns:
+            for col in factor_cols:
                 z_scores = np.abs(stats.zscore(self.factor_data[col], nan_policy='omit'))
                 self.factor_data[col] = np.where(z_scores > threshold, np.nan, self.factor_data[col])
             
             # Fill the removed values
-            self.factor_data = self.factor_data.fillna(method='ffill').fillna(method='bfill')
+            for col in factor_cols:
+                self.factor_data[col] = self.factor_data[col].fillna(method='ffill').fillna(method='bfill')
+            
             print(f"Replaced outliers with z-score > {threshold} with interpolated values.")
             
         else:
             raise ValueError("Invalid method. Use 'winsorize', 'clip', or 'zscore'.")
         
         return self
-    
+
+   
     def normalize_factors(self, method='standardize', window=None):
         """
         Normalize factor returns using various methods.
@@ -807,7 +833,7 @@ class JkpPreprocessor:
 
     def plot_factor_returns(self, factors=None, n_factors=5):
         """
-        Plot factor returns over time.
+        Plot factor returns over time (excluding n_stocks columns).
         
         Parameters:
         -----------
@@ -823,9 +849,19 @@ class JkpPreprocessor:
         if self.factor_data is None:
             raise ValueError("No pivoted factor data. Call pivot_factors() first.")
         
+        # Filter out n_stocks columns
+        factor_cols = [col for col in self.factor_data.columns if not col.endswith('_n_stocks')]
+        
         if factors is None:
             # Select a sample of factors
-            factors = self.factor_data.columns[:n_factors]
+            factors = factor_cols[:n_factors]
+        else:
+            # Filter out any n_stocks columns from the provided list
+            factors = [f for f in factors if not f.endswith('_n_stocks')]
+            
+            if not factors:
+                print("Warning: All specified factors were n_stocks columns. Selecting first few regular factors instead.")
+                factors = factor_cols[:n_factors]
         
         plt.figure(figsize=(12, 8))
         
@@ -843,7 +879,7 @@ class JkpPreprocessor:
 
     def plot_factor_correlations(self, n_factors=20):
         """
-        Plot correlation matrix of factors.
+        Plot correlation matrix of factors (excluding n_stocks columns).
         
         Parameters:
         -----------
@@ -857,14 +893,19 @@ class JkpPreprocessor:
         if self.factor_data is None:
             raise ValueError("No pivoted factor data. Call pivot_factors() first.")
         
+        # Filter out n_stocks columns
+        factor_cols = [col for col in self.factor_data.columns if not col.endswith('_n_stocks')]
+        
+        print(f"Calculating correlations for {len(factor_cols)} factor columns (excluding n_stocks columns)")
+        
         # Select a subset of factors if there are too many
-        if self.factor_data.shape[1] > n_factors:
+        if len(factor_cols) > n_factors:
             # Select factors with highest variance
-            variances = self.factor_data.var().sort_values(ascending=False)
+            variances = self.factor_data[factor_cols].var().sort_values(ascending=False)
             selected_factors = variances.index[:n_factors]
             corr_data = self.factor_data[selected_factors].corr()
         else:
-            corr_data = self.factor_data.corr()
+            corr_data = self.factor_data[factor_cols].corr()
         
         plt.figure(figsize=(12, 10))
         mask = np.triu(np.ones_like(corr_data, dtype=bool))
@@ -883,6 +924,7 @@ class JkpPreprocessor:
         plt.title('Factor Correlation Matrix')
         plt.tight_layout()
         plt.show()
+
 
     def get_data(self, data_type='processed'):
         """
@@ -1124,12 +1166,23 @@ class JkpPreprocessor:
             
             # Add the factor as a column to the DataFrame
             factor_columns_data[factor] = factor_series
+            
+            # If n_stocks exists, add it as a column too
+            if 'n_stocks' in self.data.columns:
+                n_stocks_series = pd.Series(
+                    factor_data['n_stocks'].values,
+                    index=pd.DatetimeIndex(factor_data[self.date_column]),
+                    name=f"{factor}_n_stocks"
+                )
+                factor_columns_data[f"{factor}_n_stocks"] = n_stocks_series
         
         # Store the factor columns data
         self.factor_columns_data = factor_columns_data
         
         print(f"Created factor columns dataset with shape: {self.factor_columns_data.shape}")
         print(f"Contains {len(unique_factors)} factor columns")
+        if 'n_stocks' in self.data.columns:
+            print(f"Also contains {len(unique_factors)} n_stocks columns")
         
         return self
 
