@@ -129,6 +129,201 @@ class JkpPreprocessor:
             'factor_count': factor_count
         }
     
+    def explore_factor_names(self):
+        """
+        Explore all unique factor names in the dataset and provide information about them.
+        
+        This function prints all unique values in the 'name' column, along with their
+        frequency and a sample of return values to help understand what each factor represents.
+        
+        Returns:
+        --------
+        self : JkpPreprocessor
+            Returns self for method chaining
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        # Get all unique factor names
+        factor_names = sorted(self.data['name'].unique())
+        
+        print(f"Found {len(factor_names)} unique factors in the dataset:")
+        print("\n=== FACTOR SUMMARY ===")
+        
+        # Create a summary table
+        summary_data = []
+        
+        for factor in factor_names:
+            # Get data for this factor
+            factor_data = self.data[self.data['name'] == factor]
+            
+            # Calculate statistics
+            count = len(factor_data)
+            mean_return = factor_data['ret'].mean()
+            std_return = factor_data['ret'].std()
+            min_return = factor_data['ret'].min()
+            max_return = factor_data['ret'].max()
+            
+            # Get date range
+            if not pd.api.types.is_datetime64_dtype(factor_data[self.date_column]):
+                factor_data[self.date_column] = pd.to_datetime(factor_data[self.date_column])
+            
+            start_date = factor_data[self.date_column].min()
+            end_date = factor_data[self.date_column].max()
+            
+            # Add to summary data
+            summary_data.append({
+                'Factor': factor,
+                'Count': count,
+                'Mean Return': mean_return,
+                'Std Dev': std_return,
+                'Min': min_return,
+                'Max': max_return,
+                'Start Date': start_date,
+                'End Date': end_date
+            })
+        
+        # Convert to DataFrame for nice display
+        summary_df = pd.DataFrame(summary_data)
+        
+        # Group factors by potential categories
+        sentiment_related = []
+        momentum_related = []
+        volatility_related = []
+        valuation_related = []
+        quality_related = []
+        growth_related = []
+        other_factors = []
+        
+        # Simple categorization based on factor name patterns
+        for factor in factor_names:
+            factor_lower = factor.lower()
+            
+            # Sentiment and market sentiment indicators
+            if any(term in factor_lower for term in ['sentiment', 'ret_1_0', 'rskew', 'iskew', 'niq_su', 'saleq_su']):
+                sentiment_related.append(factor)
+            
+            # Momentum factors
+            elif any(term in factor_lower for term in ['ret_', 'momentum', 'resff3']):
+                momentum_related.append(factor)
+            
+            # Volatility factors
+            elif any(term in factor_lower for term in ['vol', 'beta', 'ivol', 'rvol', 'bidask']):
+                volatility_related.append(factor)
+            
+            # Valuation factors
+            elif any(term in factor_lower for term in ['me', 'bev', 'ebitda', 'fcf', 'debt', 'sale_me']):
+                valuation_related.append(factor)
+            
+            # Quality factors
+            elif any(term in factor_lower for term in ['score', 'qmj', 'safety', 'prof', 'mispricing']):
+                quality_related.append(factor)
+            
+            # Growth factors
+            elif any(term in factor_lower for term in ['gr1', 'gr2', 'gr3', 'growth']):
+                growth_related.append(factor)
+            
+            # Other factors
+            else:
+                other_factors.append(factor)
+        
+        # Print categorized factors
+        print("\n=== FACTORS BY CATEGORY ===")
+        
+        print("\nSentiment-Related Factors:")
+        for factor in sorted(sentiment_related):
+            print(f"  - {factor}")
+        
+        print("\nMomentum Factors:")
+        for factor in sorted(momentum_related):
+            print(f"  - {factor}")
+        
+        print("\nVolatility Factors:")
+        for factor in sorted(volatility_related):
+            print(f"  - {factor}")
+        
+        print("\nValuation Factors:")
+        for factor in sorted(valuation_related):
+            print(f"  - {factor}")
+        
+        print("\nQuality Factors:")
+        for factor in sorted(quality_related):
+            print(f"  - {factor}")
+        
+        print("\nGrowth Factors:")
+        for factor in sorted(growth_related):
+            print(f"  - {factor}")
+        
+        print("\nOther Factors:")
+        for factor in sorted(other_factors):
+            print(f"  - {factor}")
+        
+        # Print summary statistics
+        print("\n=== FACTOR STATISTICS ===")
+        pd.set_option('display.max_rows', None)
+        print(summary_df.sort_values('Factor')[['Factor', 'Count', 'Mean Return', 'Std Dev', 'Min', 'Max']])
+        pd.reset_option('display.max_rows')
+        
+        return self
+
+    def select_sentiment_factors(self):
+        """
+        Select factors that are likely to be relevant for sentiment analysis.
+        
+        This function selects factors that are commonly associated with market sentiment,
+        including recent returns, volatility measures, and earnings/sales surprises.
+        
+        Returns:
+        --------
+        self : JkpPreprocessor
+            Returns self for method chaining
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        # Define factors that are typically relevant for sentiment analysis
+        sentiment_factors = [
+            # Recent returns (most reactive to sentiment)
+            'ret_1_0',      # 1-month return
+            'ret_3_1',      # 3-month return
+            
+            # Volatility (often increases with sentiment shifts)
+            'rvol_21d',     # Realized volatility
+            'ivol_capm_21d', # Idiosyncratic volatility
+            
+            # Return distribution characteristics
+            'rskew_21d',    # Return skewness
+            'iskew_capm_21d', # Idiosyncratic skewness
+            
+            # Earnings and sales surprises
+            'niq_su',       # Earnings surprise
+            'saleq_su',     # Sales surprise
+            
+            # Market activity
+            'turnover_126d', # Trading volume
+            'bidaskhl_21d',  # Bid-ask spread
+            
+            # Mispricing indicators
+            'mispricing_perf', # Performance-based mispricing
+            
+            # Extreme returns
+            'rmax5_21d'     # Maximum returns
+        ]
+        
+        # Check which of these factors are available in the dataset
+        available_factors = self.data['name'].unique()
+        available_sentiment_factors = [f for f in sentiment_factors if f in available_factors]
+        
+        if not available_sentiment_factors:
+            print("None of the predefined sentiment factors were found in the dataset.")
+            return self
+        
+        # Select the available sentiment factors
+        self.select_factors(available_sentiment_factors)
+        
+        return self
+
+    
     def convert_dates(self):
         """
         Convert date column to datetime format.
@@ -275,6 +470,92 @@ class JkpPreprocessor:
         
         return self
     
+    def handle_pivoted_missing_values(self, method='ffill'):
+        """
+        Handle missing values in the pivoted factor data.
+        
+        Parameters:
+        -----------
+        method : str
+            Method to handle missing values ('ffill', 'bfill', 'interpolate', 'drop', or 'drop_sparse')
+            
+        Returns:
+        --------
+        self : JkpPreprocessor
+            Returns self for method chaining
+        """
+        if self.factor_data is None:
+            raise ValueError("No pivoted factor data. Call pivot_factors() first.")
+        
+        print("\nHandling missing values in pivoted factor data...")
+        
+        # Check for missing values
+        total_cells = self.factor_data.size
+        missing_cells = self.factor_data.isna().sum().sum()
+        missing_pct = (missing_cells / total_cells) * 100
+        
+        print(f"Missing values: {missing_cells} out of {total_cells} cells ({missing_pct:.2f}%)")
+        
+        # Calculate missing percentage by column
+        missing_by_col = self.factor_data.isna().mean().sort_values(ascending=False)
+        sparse_columns = missing_by_col[missing_by_col > 0.5].index.tolist()
+        
+        if sparse_columns:
+            print(f"Found {len(sparse_columns)} sparse columns with >50% missing values")
+        
+        # Handle missing values based on method
+        if method == 'drop':
+            # Drop rows with any missing values
+            before_rows = len(self.factor_data)
+            self.factor_data = self.factor_data.dropna()
+            after_rows = len(self.factor_data)
+            print(f"Dropped {before_rows - after_rows} rows with missing values")
+            
+        elif method == 'drop_sparse':
+            # Drop columns with too many missing values, then drop rows with any remaining missing values
+            if sparse_columns:
+                print(f"Dropping {len(sparse_columns)} sparse columns")
+                self.factor_data = self.factor_data.drop(columns=sparse_columns)
+            
+            before_rows = len(self.factor_data)
+            self.factor_data = self.factor_data.dropna()
+            after_rows = len(self.factor_data)
+            print(f"Dropped {before_rows - after_rows} rows with missing values")
+            
+        elif method == 'ffill':
+            # Forward fill missing values
+            self.factor_data = self.factor_data.fillna(method='ffill')
+            # Handle any remaining missing values at the beginning with backward fill
+            self.factor_data = self.factor_data.fillna(method='bfill')
+            
+        elif method == 'bfill':
+            # Backward fill missing values
+            self.factor_data = self.factor_data.fillna(method='bfill')
+            # Handle any remaining missing values at the end with forward fill
+            self.factor_data = self.factor_data.fillna(method='ffill')
+            
+        elif method == 'interpolate':
+            # Interpolate missing values
+            self.factor_data = self.factor_data.interpolate(method='linear', axis=0)
+            # Handle any remaining missing values at the edges
+            self.factor_data = self.factor_data.fillna(method='ffill').fillna(method='bfill')
+            
+        else:
+            raise ValueError("Invalid method. Use 'ffill', 'bfill', 'interpolate', 'drop', or 'drop_sparse'.")
+        
+        # Check if any missing values remain
+        remaining_missing = self.factor_data.isna().sum().sum()
+        if remaining_missing > 0:
+            print(f"Warning: {remaining_missing} missing values remain after processing")
+        else:
+            print("All missing values have been handled")
+        
+        print("\n=== Processed Factor Data ===")
+        print(self.factor_data.head())
+        
+        return self
+
+    
     def handle_outliers(self, method='winsorize', threshold=3.0):
         """
         Handle outliers in factor returns.
@@ -354,10 +635,29 @@ class JkpPreprocessor:
         if self.factor_data is None:
             raise ValueError("No pivoted factor data. Call pivot_factors() first.")
         
+        # Check if factor_data is empty or contains only NaN values
+        if self.factor_data.empty:
+            print("Warning: Factor data is empty. Skipping normalization.")
+            return self
+        
+        # Check for columns with all NaN values
+        nan_columns = self.factor_data.columns[self.factor_data.isna().all()].tolist()
+        if nan_columns:
+            print(f"Warning: Removing {len(nan_columns)} columns with all NaN values before normalization.")
+            self.factor_data = self.factor_data.drop(columns=nan_columns)
+        
+        # Check if any data remains after removing NaN columns
+        if self.factor_data.empty:
+            print("Warning: No valid data remains after removing NaN columns. Skipping normalization.")
+            return self
+        
         print(f"Normalizing factors using {method} method...")
         
         # Create a copy of the original data for reference
         original_data = self.factor_data.copy()
+        
+        # Fill any remaining NaN values before normalization
+        original_data = original_data.fillna(method='ffill').fillna(method='bfill')
         
         if window is not None:
             # Time-series normalization with rolling window
@@ -366,63 +666,79 @@ class JkpPreprocessor:
                     # Z-score normalization with rolling window
                     rolling_mean = self.factor_data[col].rolling(window=window, min_periods=window//2).mean()
                     rolling_std = self.factor_data[col].rolling(window=window, min_periods=window//2).std()
+                    # Handle zero standard deviation
+                    rolling_std = rolling_std.replace(0, 1)
                     self.factor_data[col] = (self.factor_data[col] - rolling_mean) / rolling_std
                     
                 elif method == 'minmax':
                     # Min-max scaling with rolling window
                     rolling_min = self.factor_data[col].rolling(window=window, min_periods=window//2).min()
                     rolling_max = self.factor_data[col].rolling(window=window, min_periods=window//2).max()
-                    self.factor_data[col] = (self.factor_data[col] - rolling_min) / (rolling_max - rolling_min)
+                    # Handle zero range
+                    range_values = rolling_max - rolling_min
+                    range_values = range_values.replace(0, 1)
+                    self.factor_data[col] = (self.factor_data[col] - rolling_min) / range_values
                     
                 elif method == 'rank':
                     # Rolling rank transformation
                     self.factor_data[col] = self.factor_data[col].rolling(window=window, min_periods=window//2).apply(
-                        lambda x: (pd.Series(x).rank() - 1) / (len(x) - 1)
+                        lambda x: (pd.Series(x).rank() - 1) / (len(x) - 1) if len(x) > 1 else 0.5
                     )
             
             print(f"Applied rolling {method} normalization with window size {window}.")
             
         else:
             # Cross-sectional normalization
-            if method == 'standardize':
-                # Z-score standardization
-                self.scaler = StandardScaler()
-                normalized_data = self.scaler.fit_transform(original_data)
-                self.factor_data = pd.DataFrame(
-                    normalized_data, 
-                    index=original_data.index, 
-                    columns=original_data.columns
-                )
+            try:
+                if method == 'standardize':
+                    # Z-score standardization
+                    self.scaler = StandardScaler()
+                    normalized_data = self.scaler.fit_transform(original_data)
+                    self.factor_data = pd.DataFrame(
+                        normalized_data, 
+                        index=original_data.index, 
+                        columns=original_data.columns
+                    )
+                    
+                elif method == 'robust':
+                    # Robust scaling (less sensitive to outliers)
+                    self.scaler = RobustScaler()
+                    normalized_data = self.scaler.fit_transform(original_data)
+                    self.factor_data = pd.DataFrame(
+                        normalized_data, 
+                        index=original_data.index, 
+                        columns=original_data.columns
+                    )
+                    
+                elif method == 'minmax':
+                    # Min-max scaling to [0, 1]
+                    min_vals = original_data.min()
+                    max_vals = original_data.max()
+                    # Handle zero range
+                    range_vals = max_vals - min_vals
+                    range_vals = range_vals.replace(0, 1)
+                    self.factor_data = (original_data - min_vals) / range_vals
+                    
+                elif method == 'rank':
+                    # Rank transformation (0 to 1)
+                    self.factor_data = original_data.rank(pct=True)
+                    
+                else:
+                    raise ValueError("Invalid method. Use 'standardize', 'robust', 'minmax', or 'rank'.")
                 
-            elif method == 'robust':
-                # Robust scaling (less sensitive to outliers)
-                self.scaler = RobustScaler()
-                normalized_data = self.scaler.fit_transform(original_data)
-                self.factor_data = pd.DataFrame(
-                    normalized_data, 
-                    index=original_data.index, 
-                    columns=original_data.columns
-                )
-                
-            elif method == 'minmax':
-                # Min-max scaling to [0, 1]
-                normalized_data = (original_data - original_data.min()) / (original_data.max() - original_data.min())
-                self.factor_data = normalized_data
-                
-            elif method == 'rank':
-                # Rank transformation (0 to 1)
-                self.factor_data = original_data.rank(pct=True)
-                
-            else:
-                raise ValueError("Invalid method. Use 'standardize', 'robust', 'minmax', or 'rank'.")
+                print(f"Applied {method} normalization across all factors.")
             
-            print(f"Applied {method} normalization across all factors.")
+            except Exception as e:
+                print(f"Error during normalization: {e}")
+                print("Skipping normalization step.")
+                self.factor_data = original_data
         
         # Handle any NaNs created during normalization
         self.factor_data = self.factor_data.fillna(method='ffill').fillna(method='bfill')
         
         return self
-    
+
+
     def create_lagged_features(self, lags=[1, 3, 6, 12]):
         """
         Create lagged versions of factor returns as additional features.
@@ -459,7 +775,7 @@ class JkpPreprocessor:
         print(f"First {max_lag} rows dropped due to lagging.")
         
         return self
-    
+
     def create_rolling_features(self, windows=[3, 6, 12], functions=['mean', 'std']):
         """
         Create rolling window statistics as additional features.
@@ -514,7 +830,7 @@ class JkpPreprocessor:
         print(f"Created {len(windows) * len(functions) * len(original_columns)} rolling features.")
         
         return self
-    
+
     def reduce_dimensions(self, n_components=None, variance_threshold=0.95):
         """
         Reduce dimensionality of the factor data using PCA.
@@ -563,7 +879,7 @@ class JkpPreprocessor:
         print(f"PCA completed. {n_components} components explain {explained_variance:.2%} of variance.")
         
         return self
-    
+
     def plot_factor_returns(self, factors=None, n_factors=5):
         """
         Plot factor returns over time.
@@ -599,7 +915,7 @@ class JkpPreprocessor:
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.show()
-    
+
     def plot_factor_correlations(self, n_factors=20):
         """
         Plot correlation matrix of factors.
@@ -642,7 +958,7 @@ class JkpPreprocessor:
         plt.title('Factor Correlation Matrix')
         plt.tight_layout()
         plt.show()
-    
+
     def get_data(self):
         """
         Get the processed factor data.
@@ -653,7 +969,7 @@ class JkpPreprocessor:
             The processed factor data
         """
         return self.factor_data.copy() if self.factor_data is not None else None
-    
+
     def export(self, file_path, format='parquet'):
         """
         Export the processed factor data.
@@ -691,5 +1007,411 @@ class JkpPreprocessor:
         
         print(f"Factor data exported to {file_path}")
         print(f"Final shape: {self.factor_data.shape}")
+        
+        return file_path
+    
+    def get_raw_data(self):
+        """
+        Get the cleaned raw data before pivoting and transformations.
+        
+        Returns:
+        --------
+        pandas.DataFrame
+            The cleaned raw data
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        return self.data.copy()
+
+    def get_processed_data(self):
+        """
+        Get the fully processed factor data after pivoting and transformations.
+        
+        Returns:
+        --------
+        pandas.DataFrame
+            The processed factor data
+        """
+        if self.factor_data is None:
+            raise ValueError("No processed factor data available. Call pivot_factors() first.")
+        
+        return self.factor_data.copy()
+
+    def export_raw_data(self, file_path, format='parquet'):
+        """
+        Export the cleaned raw data before pivoting and transformations.
+        
+        Parameters:
+        -----------
+        file_path : str
+            Path to save the raw data
+        format : str
+            Format to save the data ('parquet' or 'csv')
+            
+        Returns:
+        --------
+        str
+            Path to the saved file
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        # Create directory if it doesn't exist
+        output_dir = Path(file_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Export based on format
+        if format.lower() == 'parquet':
+            if not file_path.endswith('.parquet'):
+                file_path += '.parquet'
+            self.data.to_parquet(file_path)
+        elif format.lower() == 'csv':
+            if not file_path.endswith('.csv'):
+                file_path += '.csv'
+            self.data.to_csv(file_path, index=False)
+        else:
+            raise ValueError("Unsupported format. Use 'parquet' or 'csv'.")
+        
+        print(f"Raw data exported to {file_path}")
+        print(f"Shape: {self.data.shape}")
+        
+        return file_path
+
+    def export_processed_data(self, file_path, format='parquet', date_column_name='date'):
+        """
+        Export the fully processed factor data after pivoting and transformations.
+        
+        Parameters:
+        -----------
+        file_path : str
+            Path to save the processed data
+        format : str
+            Format to save the data ('parquet' or 'csv')
+        date_column_name : str
+            Name to use for the date index column when exporting to CSV
+            
+        Returns:
+        --------
+        str
+            Path to the saved file
+        """
+        if self.factor_data is None:
+            raise ValueError("No processed factor data available. Call pivot_factors() first.")
+        
+        # Create directory if it doesn't exist
+        output_dir = Path(file_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Export based on format
+        if format.lower() == 'parquet':
+            if not file_path.endswith('.parquet'):
+                file_path += '.parquet'
+            self.factor_data.to_parquet(file_path)
+        elif format.lower() == 'csv':
+            if not file_path.endswith('.csv'):
+                file_path += '.csv'
+            # Reset index to make the date a column with the specified name
+            df_to_export = self.factor_data.reset_index()
+            df_to_export.rename(columns={'index': date_column_name}, inplace=True)
+            df_to_export.to_csv(file_path, index=False)
+        else:
+            raise ValueError("Unsupported format. Use 'parquet' or 'csv'.")
+        
+        print(f"Processed factor data exported to {file_path}")
+        print(f"Shape: {self.factor_data.shape}")
+        
+        return file_path
+
+
+
+    
+    
+    def select_factors(self, factors_to_keep):
+        """
+        Select specific JKP factors to keep in the dataset.
+        
+        Parameters:
+        -----------
+        factors_to_keep : list
+            List of factor names to keep (e.g., ['age', 'ret_12_1', 'rvol_21d'])
+                
+        Returns:
+        --------
+        self : JkpPreprocessor
+            Returns self for method chaining
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        # Check if any of the requested factors exist in the dataset
+        available_factors = self.data['name'].unique()
+        found_factors = [f for f in factors_to_keep if f in available_factors]
+        missing_factors = [f for f in factors_to_keep if f not in available_factors]
+        
+        if not found_factors:
+            raise ValueError("None of the requested factors were found in the dataset.")
+        
+        if missing_factors:
+            print(f"Warning: The following factors were not found in the dataset: {missing_factors}")
+        
+        # Filter to keep only specified factors
+        original_rows = len(self.data)
+        original_factors = len(self.data['name'].unique())
+        
+        self.data = self.data[self.data['name'].isin(found_factors)]
+        
+        # Report results
+        final_rows = len(self.data)
+        final_factors = len(self.data['name'].unique())
+        
+        print(f"Selected {final_factors} out of {original_factors} factors")
+        print(f"Rows before: {original_rows}, Rows after: {final_rows}")
+        print("\nKept factors:")
+        for factor in sorted(self.data['name'].unique()):
+            print(f"  - {factor}")
+        
+        return self
+
+    def filter_by_date(self, start_date=None, end_date=None):
+        """
+        Filter the dataset to include only data within a specified date range.
+        
+        Parameters:
+        -----------
+        start_date : str or datetime, optional
+            The earliest date to include (format: 'YYYY-MM-DD')
+        end_date : str or datetime, optional
+            The latest date to include (format: 'YYYY-MM-DD')
+                
+        Returns:
+        --------
+        self : JkpPreprocessor
+            Returns self for method chaining
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        # Convert dates if needed
+        if not pd.api.types.is_datetime64_dtype(self.data[self.date_column]):
+            self.data[self.date_column] = pd.to_datetime(self.data[self.date_column])
+        
+        original_rows = len(self.data)
+        original_date_range = f"{self.data[self.date_column].min():%Y-%m-%d} to {self.data[self.date_column].max():%Y-%m-%d}"
+        
+        # Apply filters
+        if start_date:
+            start_date = pd.to_datetime(start_date)
+            self.data = self.data[self.data[self.date_column] >= start_date]
+        
+        if end_date:
+            end_date = pd.to_datetime(end_date)
+            self.data = self.data[self.data[self.date_column] <= end_date]
+        
+        # Report results
+        final_rows = len(self.data)
+        final_date_range = f"{self.data[self.date_column].min():%Y-%m-%d} to {self.data[self.date_column].max():%Y-%m-%d}"
+        
+        print(f"Original date range: {original_date_range}")
+        print(f"Filtered date range: {final_date_range}")
+        print(f"Rows before: {original_rows}, Rows after: {final_rows}")
+        
+        return self
+
+    def create_factor_columns_dataset(self):
+        """
+        Create a dataset where each factor from the 'name' column becomes its own column.
+        
+        This method creates a DataFrame where:
+        - Each row represents a date
+        - Each column represents a factor (using original factor names from the 'name' column)
+        - Values are the factor returns for that date
+        
+        Returns:
+        --------
+        self : JkpPreprocessor
+            Returns self for method chaining
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        if 'name' not in self.data.columns:
+            raise ValueError("Data must contain a 'name' column to identify factors.")
+        
+        print("Creating dataset with factor columns...")
+        
+        # Get unique dates and factor names
+        unique_dates = sorted(self.data[self.date_column].unique())
+        unique_factors = sorted(self.data['name'].unique())
+        
+        print(f"Found {len(unique_factors)} unique factors across {len(unique_dates)} dates")
+        
+        # Create an empty DataFrame with dates as index
+        factor_columns_data = pd.DataFrame(index=pd.DatetimeIndex(unique_dates))
+        
+        # For each factor, extract its time series and add as a column
+        for factor in unique_factors:
+            # Get data for this factor
+            factor_data = self.data[self.data['name'] == factor]
+            
+            # Create a Series with the factor returns indexed by date
+            factor_series = pd.Series(
+                factor_data[self.return_column].values,
+                index=pd.DatetimeIndex(factor_data[self.date_column]),
+                name=factor
+            )
+            
+            # Add the factor as a column to the DataFrame
+            factor_columns_data[factor] = factor_series
+        
+        # Store the factor columns data
+        self.factor_columns_data = factor_columns_data
+        
+        print(f"Created factor columns dataset with shape: {self.factor_columns_data.shape}")
+        print(f"Contains {len(unique_factors)} factor columns")
+        
+        return self
+
+    def handle_factor_columns_missing_values(self, method='ffill'):
+        """
+        Handle missing values in the factor columns dataset.
+        
+        Parameters:
+        -----------
+        method : str
+            Method to handle missing values ('ffill', 'bfill', 'interpolate', 'drop', or 'drop_sparse')
+            
+        Returns:
+        --------
+        self : JkpPreprocessor
+            Returns self for method chaining
+        """
+        if not hasattr(self, 'factor_columns_data') or self.factor_columns_data is None:
+            raise ValueError("No factor columns data. Call create_factor_columns_dataset() first.")
+        
+        print("\nHandling missing values in factor columns data...")
+        
+        # Check for missing values
+        total_cells = self.factor_columns_data.size
+        missing_cells = self.factor_columns_data.isna().sum().sum()
+        missing_pct = (missing_cells / total_cells) * 100
+        
+        print(f"Missing values: {missing_cells} out of {total_cells} cells ({missing_pct:.2f}%)")
+        
+        # Calculate missing percentage by column
+        missing_by_col = self.factor_columns_data.isna().mean().sort_values(ascending=False)
+        sparse_columns = missing_by_col[missing_by_col > 0.5].index.tolist()
+        
+        if sparse_columns:
+            print(f"Found {len(sparse_columns)} sparse columns with >50% missing values")
+        
+        # Handle missing values based on method
+        if method == 'drop':
+            # Drop rows with any missing values
+            before_rows = len(self.factor_columns_data)
+            self.factor_columns_data = self.factor_columns_data.dropna()
+            after_rows = len(self.factor_columns_data)
+            print(f"Dropped {before_rows - after_rows} rows with missing values")
+            
+        elif method == 'drop_sparse':
+            # Drop columns with too many missing values, then drop rows with any remaining missing values
+            if sparse_columns:
+                print(f"Dropping {len(sparse_columns)} sparse columns")
+                self.factor_columns_data = self.factor_columns_data.drop(columns=sparse_columns)
+            
+            before_rows = len(self.factor_columns_data)
+            self.factor_columns_data = self.factor_columns_data.dropna()
+            after_rows = len(self.factor_columns_data)
+            print(f"Dropped {before_rows - after_rows} rows with missing values")
+            
+        elif method == 'ffill':
+            # Forward fill missing values
+            self.factor_columns_data = self.factor_columns_data.fillna(method='ffill')
+            # Handle any remaining missing values at the beginning with backward fill
+            self.factor_columns_data = self.factor_columns_data.fillna(method='bfill')
+            
+        elif method == 'bfill':
+            # Backward fill missing values
+            self.factor_columns_data = self.factor_columns_data.fillna(method='bfill')
+            # Handle any remaining missing values at the end with forward fill
+            self.factor_columns_data = self.factor_columns_data.fillna(method='ffill')
+            
+        elif method == 'interpolate':
+            # Interpolate missing values
+            self.factor_columns_data = self.factor_columns_data.interpolate(method='linear', axis=0)
+            # Handle any remaining missing values at the edges
+            self.factor_columns_data = self.factor_columns_data.fillna(method='ffill').fillna(method='bfill')
+            
+        else:
+            raise ValueError("Invalid method. Use 'ffill', 'bfill', 'interpolate', 'drop', or 'drop_sparse'.")
+        
+        # Check if any missing values remain
+        remaining_missing = self.factor_columns_data.isna().sum().sum()
+        if remaining_missing > 0:
+            print(f"Warning: {remaining_missing} missing values remain after processing")
+        else:
+            print("All missing values have been handled")
+        
+        print("\n=== Factor Columns Data ===")
+        print(self.factor_columns_data.head())
+        
+        return self
+
+    def get_factor_columns_data(self):
+        """
+        Get the factor columns dataset.
+        
+        Returns:
+        --------
+        pandas.DataFrame
+            The factor columns dataset
+        """
+        if not hasattr(self, 'factor_columns_data') or self.factor_columns_data is None:
+            raise ValueError("No factor columns data. Call create_factor_columns_dataset() first.")
+        
+        return self.factor_columns_data.copy()
+
+    def export_factor_columns_data(self, file_path, format='parquet', date_column_name='date'):
+        """
+        Export the factor columns dataset.
+        
+        Parameters:
+        -----------
+        file_path : str
+            Path to save the factor columns data
+        format : str
+            Format to save the data ('parquet' or 'csv')
+        date_column_name : str
+            Name to use for the date index column when exporting to CSV
+            
+        Returns:
+        --------
+        str
+            Path to the saved file
+        """
+        if not hasattr(self, 'factor_columns_data') or self.factor_columns_data is None:
+            raise ValueError("No factor columns data. Call create_factor_columns_dataset() first.")
+        
+        # Create directory if it doesn't exist
+        output_dir = Path(file_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Export based on format
+        if format.lower() == 'parquet':
+            if not file_path.endswith('.parquet'):
+                file_path += '.parquet'
+            self.factor_columns_data.to_parquet(file_path)
+        elif format.lower() == 'csv':
+            if not file_path.endswith('.csv'):
+                file_path += '.csv'
+            # Reset index to make the date a column with the specified name
+            df_to_export = self.factor_columns_data.reset_index()
+            df_to_export.rename(columns={'index': date_column_name}, inplace=True)
+            df_to_export.to_csv(file_path, index=False)
+        else:
+            raise ValueError("Unsupported format. Use 'parquet' or 'csv'.")
+        
+        print(f"Factor columns data exported to {file_path}")
+        print(f"Shape: {self.factor_columns_data.shape}")
         
         return file_path

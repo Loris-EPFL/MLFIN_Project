@@ -238,7 +238,7 @@ class ReturnPreprocessor:
     
     def select_essential_columns(self):
         """
-        Select the essential columns for the return prediction task.
+        Select only PERMNO, PERMCO, MthCalDt, MthRet, and sprtrn columns.
         
         Returns:
         --------
@@ -250,13 +250,14 @@ class ReturnPreprocessor:
         
         essential_columns = [
             'PERMNO',      # Unique security identifier
+            'PERMCO',      # Company identifier
+            'CUSIP',
+            'Ticker',
+            'SICCD',
+            'NAICS',
             'MthCalDt',    # Date
             'MthRet',      # Target variable (monthly return)
-            'sprtrn',      # Market benchmark
-            'CUSIP',       # For merging with other datasets
-            'SICCD',       # Industry classification
-            'NAICS',       # Alternative industry classification
-            'PERMCO'       # Company identifier
+            'sprtrn'       # Market benchmark
         ]
         
         # Check which essential columns are actually in the dataset
@@ -268,6 +269,7 @@ class ReturnPreprocessor:
         print(f"Selected {len(available_columns)} essential columns: {', '.join(available_columns)}")
         
         return self
+
     
     def handle_missing_values(self):
         """
@@ -347,6 +349,95 @@ class ReturnPreprocessor:
         final_rows = len(self.data)
         rows_removed = original_rows - final_rows
         print(f"Total rows removed: {rows_removed} ({rows_removed/original_rows:.2%} of original data)")
+        
+        return self
+
+    def sort_by_date(self, ascending=True):
+        """
+        Sort the dataset by date.
+        
+        Parameters:
+        -----------
+        ascending : bool, default=True
+            If True, sort from oldest to newest (chronological order).
+            If False, sort from newest to oldest (reverse chronological order).
+            
+        Returns:
+        --------
+        self : ReturnPreprocessor
+            Returns self for method chaining
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        # Ensure date column is in datetime format
+        if not pd.api.types.is_datetime64_dtype(self.data[self.date_column]):
+            self.data[self.date_column] = pd.to_datetime(self.data[self.date_column])
+        
+        # Sort by date first, then by security identifier
+        self.data = self.data.sort_values(
+            [self.date_column, self.id_column], 
+            ascending=[ascending, True]
+        )
+        
+        date_range = f"from {self.data[self.date_column].min().strftime('%Y-%m-%d')} to {self.data[self.date_column].max().strftime('%Y-%m-%d')}"
+        order = "chronological" if ascending else "reverse chronological"
+        print(f"Data sorted in {order} order {date_range}")
+        
+        return self
+
+    def filter_by_date(self, start_date=None, end_date=None):
+        """
+        Filter the dataset to include only data within a specified date range.
+        
+        Parameters:
+        -----------
+        start_date : str or datetime, optional
+            The earliest date to include in the dataset (inclusive).
+            Format: 'YYYY-MM-DD' or datetime object.
+            If None, no lower bound is applied.
+        
+        end_date : str or datetime, optional
+            The latest date to include in the dataset (inclusive).
+            Format: 'YYYY-MM-DD' or datetime object.
+            If None, no upper bound is applied.
+            
+        Returns:
+        --------
+        self : ReturnPreprocessor
+            Returns self for method chaining
+        """
+        if self.data is None:
+            raise ValueError("No data loaded. Call load() first.")
+        
+        # Ensure date column is in datetime format
+        if not pd.api.types.is_datetime64_dtype(self.data[self.date_column]):
+            self.data[self.date_column] = pd.to_datetime(self.data[self.date_column])
+        
+        original_rows = len(self.data)
+        
+        # Apply start date filter if provided
+        if start_date is not None:
+            start_date = pd.to_datetime(start_date)
+            self.data = self.data[self.data[self.date_column] >= start_date]
+            print(f"Removed data before {start_date.strftime('%Y-%m-%d')}")
+        
+        # Apply end date filter if provided
+        if end_date is not None:
+            end_date = pd.to_datetime(end_date)
+            self.data = self.data[self.data[self.date_column] <= end_date]
+            print(f"Removed data after {end_date.strftime('%Y-%m-%d')}")
+        
+        # Report the results
+        final_rows = len(self.data)
+        rows_removed = original_rows - final_rows
+        
+        if rows_removed > 0:
+            print(f"Total rows removed: {rows_removed} ({rows_removed/original_rows:.2%} of original data)")
+            print(f"Remaining date range: {self.data[self.date_column].min().strftime('%Y-%m-%d')} to {self.data[self.date_column].max().strftime('%Y-%m-%d')}")
+            print(f"Remaining securities: {self.data[self.id_column].nunique()}")
+        else:
+            print("No data was filtered out based on the provided date range.")
         
         return self
 
