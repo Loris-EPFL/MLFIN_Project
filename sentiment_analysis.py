@@ -15,16 +15,17 @@ class ReportsProcessing:
     @staticmethod
     def _load_clean_data(file_path: str) -> pd.DataFrame:
         data = pd.read_parquet(file_path)
-        data['mostimportantdateutc'] = pd.to_datetime(data['mostimportantdateutc'])
+        data['report_date'] = pd.to_datetime(data['report_date'])
         return data
 
     def clean_reports(self):
         tqdm.pandas(desc="Cleaning Reports", unit='reports')
-        self.data['cleaned_text'] = self.data['componenttext'].progress_apply(self._clean_text)
-        self.data.drop(columns=['componenttext'], inplace=True)
+        self.data['cleaned_text'] = self.data['text'].progress_apply(self._clean_text)
+        self.data.drop(columns=['text'], inplace=True)
 
     @staticmethod
     def _clean_text(text: str) -> str:
+        text = re.sub(r"^(item 7\.)\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\[.*?\]", " ", text)
         text = re.sub(r"http\S+", "", text)
         text = re.sub(r"@\w+", "", text)
@@ -71,5 +72,6 @@ class ReportsProcessing:
 
     def save_clean_data(self):
         self.data.to_parquet(
-            os.path.join(self.clean_folder, 'sentiment_earning_calls.parquet'), index=False
+            os.path.join(self.clean_folder, 'sentiment_tenkreports.parquet'), index=False
         )
+
