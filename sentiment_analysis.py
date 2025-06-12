@@ -10,26 +10,30 @@ class ReportsProcessing:
         self.data = self._load_clean_data(data_path)
         self.clean_folder = clean_folder
         os.makedirs(self.clean_folder, exist_ok=True)
-        self.device = 'cpu'  # Set to 'cuda' if needed
+        self.device = 'cuda'  # Set to 'cuda' if needed
 
     @staticmethod
     def _load_clean_data(file_path: str) -> pd.DataFrame:
         data = pd.read_parquet(file_path)
-        data['time'] = pd.to_datetime(data['time'])
+        data['report_date'] = pd.to_datetime(data['report_date'])
         return data
 
     def clean_reports(self):
-        tqdm.pandas(desc="Cleaning tweets", unit='tweets')
+        tqdm.pandas(desc="Cleaning Reports", unit='reports')
         self.data['cleaned_text'] = self.data['text'].progress_apply(self._clean_text)
+        self.data.drop(columns=['text'], inplace=True)
 
     @staticmethod
     def _clean_text(text: str) -> str:
+        text = re.sub(r"^(item 7\.)\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\[.*?\]", " ", text)
         text = re.sub(r"http\S+", "", text)
         text = re.sub(r"@\w+", "", text)
         text = re.sub(r"#", "", text)
         text = re.sub(r'[\n\r\t]+', " ", text)
         text = re.sub(r"\s+", " ", text)
-        return text.strip().lower()
+        cleaned = text.strip().lower()
+        return cleaned[:512]
 
     def reports_sentiment_analysis(self, batch_size: int = 128):
         sentiment_classifier = pipeline(
@@ -38,7 +42,7 @@ class ReportsProcessing:
             device=0 if self.device == 'cuda' else -1
         )
 
-        texts = self.data['text'].tolist()
+        texts = self.data['cleaned_text'].tolist()
         sentiments = []
         sentiment_scores = []
 
@@ -52,10 +56,10 @@ class ReportsProcessing:
         self.data['sentiment'] = sentiments
         self.data['sentiment_score'] = sentiment_scores
 
-        sentiment_summary = self.data[['sentiment', 'sentiment_score', 'text']].groupby('sentiment').agg({
-            'text': 'count',
+        sentiment_summary = self.data[['sentiment', 'sentiment_score', 'cleaned_text']].groupby('sentiment').agg({
+            'cleaned_text': 'count',
             'sentiment_score': 'mean'
-        }).rename(columns={'text': 'report_count', 'sentiment_score': 'avg_sentiment_score'})
+        }).rename(columns={'cleaned_text': 'report_count', 'sentiment_score': 'avg_sentiment_score'})
 
         print("Sentiment Analysis Report:")
         for label in ['positive', 'neutral', 'negative']:
@@ -68,5 +72,6 @@ class ReportsProcessing:
 
     def save_clean_data(self):
         self.data.to_parquet(
-            os.path.join(self.clean_folder, 'twitter.parquet'), index=False
+            os.path.join(self.clean_folder, 'sentiment_tenkreports.parquet'), index=False
         )
+
