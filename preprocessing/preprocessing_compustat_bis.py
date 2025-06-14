@@ -215,12 +215,6 @@ class CompustatPreprocessor:
 
             print("\n=== Missing Values ===")
             print(missing_df[missing_df['Missing Values'] > 0])
-            # if(save_missing_values):
-            #     missing_df[missing_df["Missing Values"] > 0].to_csv(
-            #         "missing_values.csv", index=False
-            #     )
-
-
             print(f"Total columns with missing values: {sum(missing > 0)}")
 
         # Unique values for categorical columns
@@ -1341,32 +1335,6 @@ class CompustatPreprocessor:
 
         return self
 
-    def add_reporting_delay(self, delay_months=4):
-        """
-        Add a reporting delay column to simulate when financial data becomes available.
-
-        Parameters:
-        -----------
-        delay_months : int
-            Number of months to add as reporting delay
-
-        Returns:
-        --------
-        self : CompustatPreprocessor
-            Returns self for method chaining
-        """
-        if self.data is None:
-            raise ValueError("No data loaded. Call load() first.")
-
-        print(f"Adding {delay_months}-month reporting delay...")
-
-        # Create available_date column
-        self.data['available_date'] = self.data[self.date_column] + pd.DateOffset(months=delay_months)
-
-        print(f"Created 'available_date' column: {self.date_column} + {delay_months} months")
-
-        return self
-
     def plot_interpolation_example(self, company_id=None, column=None, n_samples=3):
         """
         Plot examples of the interpolation for visual inspection.
@@ -1539,5 +1507,8 @@ class CompustatPreprocessor:
         print(f"Coverage: Found {compustat_cusips_after:,} out of {unique_returns_cusips:,} returns CUSIPs in Compustat data ({compustat_cusips_after/unique_returns_cusips*100:.1f}%)")
 
         return self
+
+
+
 
 
